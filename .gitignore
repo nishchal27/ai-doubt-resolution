@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env.*.local
+.vscode
+.DS_Store
+dist
+npm-debug.log
+pnpm-lock.yaml
+yarn.lock
+/*.log
+coverage
+.idea
+.vscode/*
+!.vscode/settings.json

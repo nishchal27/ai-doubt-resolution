@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URL is provided by prisma.config.* (Prisma v7+).
+}
+
+// Prisma does not have a native vector type yet. We use Unsupported for the pgvector column.
+
+model Lesson {
+  id          String         @id @default(cuid())
+  slug        String         @unique
+  title       String
+  description String?
+  contents    LessonContent[]
+  chunks      ContentChunk[]
+  conversations Conversation[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model LessonContent {
+  id        String         @id @default(cuid())
+  lesson    Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lessonId  String
+  sourceType String
+  title     String?
+  content   String
+  sourceUrl String?
+  metadata  Json?
+  chunks    ContentChunk[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([lessonId])
+}
+
+model ContentChunk {
+  id               String   @id @default(cuid())
+  lesson           Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lessonId         String
+  lessonContent    LessonContent? @relation(fields: [lessonContentId], references: [id], onDelete: Cascade)
+  lessonContentId  String?
+  content          String
+  chunkIndex       Int
+  sourceType       String
+  sourceReference  String?
+  metadata         Json?
+  // embedding stored as pgvector vector(1536)
+  embedding        Unsupported("vector(1536)")
+  messageSources   MessageSource[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([lessonId])
+  @@index([lessonContentId])
+}
+
+model Conversation {
+  id          String    @id @default(cuid())
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lessonId    String
+  messages    Message[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([lessonId])
+}
+
+model Message {
+  id             String          @id @default(cuid())
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  role           String
+  content        String
+  sources        MessageSource[]
+  createdAt      DateTime        @default(now())
+
+  @@index([conversationId])
+}
+
+model MessageSource {
+  id             String       @id @default(cuid())
+  message        Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId      String
+  contentChunk   ContentChunk @relation(fields: [contentChunkId], references: [id], onDelete: NoAction)
+  contentChunkId String
+  sourceType     String
+  sourceReference String?
+  excerpt        String?
+  createdAt      DateTime     @default(now())
+
+  @@index([messageId])
+  @@index([contentChunkId])
+}
