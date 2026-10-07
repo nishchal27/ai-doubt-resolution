@@ -104,15 +104,8 @@ export async function answerConversationMessage({ conversationId, question }: { 
   if (!conv) throw new Error('Conversation not found');
   const lessonId = conv.lessonId;
 
-  // Save user message first
-  let userMessage;
-  try {
-    userMessage = await prisma.message.create({ data: { conversationId, role: 'user', content: question } });
-  } catch (err) {
-    throw new Error('Failed to persist user message');
-  }
-
-  // Load bounded history (most recent messages) to pass as context
+  // Load bounded history (most recent messages) BEFORE saving the current user message.
+  // This ensures the history passed to the answer generator does NOT include the current question.
   const recentMessages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: 'desc' },
@@ -125,7 +118,26 @@ export async function answerConversationMessage({ conversationId, question }: { 
     content: m.content,
   }));
 
-  // Call phase 5 generateAnswer with lesson-scoped retrieval and history
+  // Now persist the current user message so we keep conversation state consistent.
+  let userMessage;
+  try {
+    userMessage = await prisma.message.create({ data: { conversationId, role: 'user', content: question } });
+  } catch (err) {
+    throw new Error('Failed to persist user message');
+  }
+
+  // Development logging: show which user message will be used for follow-up composition (most recent prior user)
+  try {
+    if (process.env.NODE_ENV !== 'production') {
+      const lastUser = [...history].reverse().find((m) => m.role === 'user');
+      console.log('[DEV] answerConversationMessage — question:', question);
+      console.log('[DEV] answerConversationMessage — most recent prior user message:', lastUser?.content ?? null);
+    }
+  } catch (e) {
+    // ignore logging errors
+  }
+
+  // Call phase 5 generateAnswer with lesson-scoped retrieval and history (history does NOT include current question)
   let answerResult: AnswerResult;
   try {
     answerResult = await generateAnswer({ lessonId, question, history, limit: 6 });

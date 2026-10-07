@@ -75,42 +75,45 @@ export default function DoubtChat({ lessonId }: { lessonId: string }) {
       <div className="bg-white p-3 rounded-md max-h-[60vh] flex flex-col">
         <h3 className="text-sm font-medium mb-2">Conversation History</h3>
 
-        <div ref={historyRef} className="flex-grow overflow-auto">
+        <div ref={historyRef} className="flex-grow overflow-auto flex flex-col">
           <ConversationHistory conversationId={conversationId} />
-        </div>
 
-        {lastAnswer ? (
-          <div className="mt-2 mb-2">
-            <h3 className="text-sm font-medium">Latest Answer</h3>
-            <div className="mt-2 bg-white p-3 rounded-md shadow-sm">
-              <div className="whitespace-pre-wrap text-slate-800">{lastAnswer}</div>
+          {lastAnswer ? (
+            <div className="mt-2 mb-2">
+              <h3 className="text-sm font-medium">Latest Answer</h3>
+              <div className="mt-2 bg-white p-3 rounded-md shadow-sm">
+                <div className="whitespace-pre-wrap text-slate-800">{lastAnswer}</div>
+              </div>
             </div>
-          </div>
       ) : null}
 
-        <form onSubmit={handleSubmit} className="mt-2 sticky bottom-0 bg-white pt-2">
-          <label htmlFor="question" className="sr-only">Your question</label>
-          <textarea
-            id="question"
-            ref={textareaRef}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Type your question about this lesson..."
-            className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-sky-400"
-            rows={3}
-            disabled={loading}
-          />
-          {error ? <div className="text-sm text-red-600 mt-2">{error}</div> : null}
-          <div className="mt-2 flex items-center gap-2">
-            <button type="submit" disabled={loading} className="px-4 py-2 bg-sky-600 text-white rounded-md disabled:opacity-50">
-              {loading ? 'Asking...' : 'Ask'}
-            </button>
-            <button type="button" onClick={() => { setQuestion(''); setError(null); if (textareaRef.current) textareaRef.current.focus(); }} className="px-3 py-2 border rounded-md">
-              Clear
-            </button>
-            {conversationId ? <div className="ml-auto text-xs text-slate-500">Conversation: {conversationId}</div> : null}
+          {/* Composer placed inside the scrollable history container so scrolling to bottom shows composer */}
+          <div className="mt-2">
+            <form onSubmit={handleSubmit} className="bg-white pt-2">
+              <label htmlFor="question" className="sr-only">Your question</label>
+              <textarea
+                id="question"
+                ref={textareaRef}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="Type your question about this lesson..."
+                className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-sky-400"
+                rows={3}
+                disabled={loading}
+              />
+              {error ? <div className="text-sm text-red-600 mt-2">{error}</div> : null}
+              <div className="mt-2 flex items-center gap-2">
+                <button type="submit" disabled={loading} className="px-4 py-2 bg-sky-600 text-white rounded-md disabled:opacity-50">
+                  {loading ? 'Asking...' : 'Ask'}
+                </button>
+                <button type="button" onClick={() => { setQuestion(''); setError(null); if (textareaRef.current) textareaRef.current.focus(); }} className="px-3 py-2 border rounded-md">
+                  Clear
+                </button>
+                {conversationId ? <div className="ml-auto text-xs text-slate-500">Conversation: {conversationId}</div> : null}
+              </div>
+            </form>
           </div>
-        </form>
+        </div>
       </div>
     </section>
   );

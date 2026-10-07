@@ -44,15 +44,15 @@ export default async function LessonPage({ params }: { params: { slug: string } 
     <div className="py-8">
       <LessonHeader title={lesson.title} description={lesson.description} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+      <div className="max-w-4xl mx-auto">
+        <div>
           <LessonVideo videoUrl={'https://www.youtube.com/embed/AUaVINUiO2I?start=23'} />
           {study ? <StudyMaterial content={study.content} /> : null}
         </div>
 
-        <aside className="lg:col-span-1">
+        <div className="mt-6">
           <DoubtChat lessonId={lesson.id} />
-        </aside>
+        </div>
       </div>
     </div>
   );
