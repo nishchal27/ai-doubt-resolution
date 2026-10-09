@@ -14,6 +14,7 @@ try {
 declare global {
   // allow global prisma in dev to avoid exhausting connections from HMR
   // eslint-disable-next-line no-var
+  // eslint-disable-next-line no-unused-vars
   var prisma: PrismaClient | undefined;
 }
 
