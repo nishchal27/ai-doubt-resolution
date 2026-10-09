@@ -4,6 +4,46 @@ import ConversationHistory from './conversation-history';
 
 export default function DoubtChat({ lessonId }: { lessonId: string }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
+
+  // Local storage key scoped to lesson
+  const storageKey = `conversationId:${lessonId}`;
+
+  // On mount (or when lessonId changes), attempt to restore a persisted conversation id for this lesson
+  useEffect(() => {
+    let mounted = true;
+    async function restore() {
+      try {
+        const stored = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
+        console.log('[chat-debug] restore attempt, storageKey=', storageKey, ' storedId=', stored ?? null);
+        if (!stored) return;
+        // Verify the stored conversation belongs to this lesson by attempting to load its messages with lessonId param
+        const res = await fetch(`/api/conversations/${stored}/messages?lessonId=${encodeURIComponent(lessonId)}`);
+        console.log('[chat-debug] restore GET status', res.status);
+        if (!mounted) return;
+        if (res.ok) {
+          try {
+            const data = await res.json().catch(() => null);
+            const count = data?.messages?.length ?? null;
+            console.log('[chat-debug] restore GET messages count=', count);
+          } catch (e) {
+            console.log('[chat-debug] restore GET parse error');
+          }
+          setConversationId(stored);
+          console.log('[chat-debug] restored conversationId set in state=', stored);
+        } else {
+          // Invalid or mismatched conversation - remove from storage
+          console.log('[chat-debug] stored conversation invalid for this lesson, removing');
+          try { window.localStorage.removeItem(storageKey); } catch (e) { /* ignore */ }
+        }
+      } catch (e) {
+        // On network or other errors, leave state alone (do not clear storage) so user can retry
+        console.error('[chat-debug] failed to restore conversation', e);
+      }
+    }
+    restore();
+    return () => { mounted = false; };
+  }, [lessonId, storageKey]);
+
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,13 +54,18 @@ export default function DoubtChat({ lessonId }: { lessonId: string }) {
 
   async function ensureConversation() {
     if (conversationId) return conversationId;
+    console.log('[chat-debug] ensureConversation: no conversationId, creating new for lesson', lessonId);
     const res = await fetch('/api/conversations', { method: 'POST', body: JSON.stringify({ lessonId }), headers: { 'Content-Type': 'application/json' } });
+    console.log('[chat-debug] ensureConversation create status', res.status);
     if (!res.ok) {
       setError('Unable to start a conversation.');
       throw new Error('Conversation creation failed');
     }
     const data = await res.json();
+    console.log('[chat-debug] ensureConversation created id=', data.id);
     setConversationId(data.id);
+    // Persist active conversation id scoped to lesson
+    try { window.localStorage.setItem(storageKey, data.id); console.log('[chat-debug] stored conversationId in localStorage', storageKey, data.id); } catch (e) { console.log('[chat-debug] failed to write localStorage', e); }
     return data.id;
   }
 
@@ -34,7 +79,7 @@ export default function DoubtChat({ lessonId }: { lessonId: string }) {
     setLoading(true);
     try {
       const convId = await ensureConversation();
-      const res = await fetch(`/api/conversations/${convId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) });
+      const res = await fetch(`/api/conversations/${convId}/messages?lessonId=${encodeURIComponent(lessonId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) });
       if (!res.ok) {
         if (res.status === 400) {
           const j = await res.json().catch(() => ({}));
@@ -61,6 +106,19 @@ export default function DoubtChat({ lessonId }: { lessonId: string }) {
     }
   }
 
+  // Persist conversationId to localStorage whenever it changes (scoped to lesson)
+  useEffect(() => {
+    try {
+      if (conversationId) {
+        window.localStorage.setItem(storageKey, conversationId);
+      } else {
+        window.localStorage.removeItem(storageKey);
+      }
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [conversationId, storageKey]);
+
   // When conversation history updates, scroll the history container to bottom so latest messages are visible above composer.
   useEffect(() => {
     if (historyRef.current) {
@@ -76,7 +134,7 @@ export default function DoubtChat({ lessonId }: { lessonId: string }) {
         <h3 className="text-sm font-medium mb-2">Conversation History</h3>
 
         <div ref={historyRef} className="flex-grow overflow-auto flex flex-col">
-          <ConversationHistory conversationId={conversationId} />
+          <ConversationHistory conversationId={conversationId} lessonId={lessonId} />
 
           {lastAnswer ? (
             <div className="mt-2 mb-2">

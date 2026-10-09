@@ -10,27 +10,68 @@ export type ConversationSummary = {
   updatedAt: Date;
 };
 
+// Helper to detect application-level errors we want to propagate to the API layer as-is
+function isAppError(err: any) {
+  if (!err || !err.message) return false;
+  const msg = String(err.message || '').toLowerCase();
+  const safeSubstrings = [
+    'not found',
+    'required',
+    'empty',
+    'mismatch',
+    'attempted to attach',
+    'referenced content chunk',
+    'question is empty',
+    'failed to persist user message',
+    'failed to generate answer',
+    'openrouter',
+  ];
+  return safeSubstrings.some((s) => msg.includes(s));
+}
+
 export async function createConversation(lessonId: string) {
   if (!lessonId) throw new Error('lessonId is required');
   // Verify lesson exists
-  const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+  let lesson;
+  try {
+    lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
   if (!lesson) throw new Error('Lesson not found');
 
-  const conv = await prisma.conversation.create({ data: { lessonId } });
-  return conv;
+  try {
+    const conv = await prisma.conversation.create({ data: { lessonId } });
+    return conv;
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
 }
 
 export async function getConversation(conversationId: string) {
   if (!conversationId) throw new Error('conversationId is required');
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  let conv;
+  try {
+    conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
   if (!conv) throw new Error('Conversation not found');
   return conv;
 }
 
 export async function listConversations(lessonId: string) {
   if (!lessonId) throw new Error('lessonId is required');
-  const convs = await prisma.conversation.findMany({ where: { lessonId }, orderBy: { updatedAt: 'desc' } });
-  return convs as ConversationSummary[];
+  try {
+    const convs = await prisma.conversation.findMany({ where: { lessonId }, orderBy: { updatedAt: 'desc' } });
+    return convs as ConversationSummary[];
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
 }
 
 export async function addMessage(
@@ -48,51 +89,93 @@ export async function addMessage(
   if (!content || !content.toString().trim()) throw new Error('content is empty');
 
   // Verify conversation exists
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  let conv;
+  try {
+    conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
   if (!conv) throw new Error('Conversation not found');
 
   // Create message and optional sources in a transaction
-  const result = await prisma.$transaction(async (tx: any) => {
-    const message = await tx.message.create({ data: { conversationId, role, content } });
+  try {
+    const result = await prisma.$transaction(async (tx: any) => {
+      const message = await tx.message.create({ data: { conversationId, role, content } });
 
-    if (role === 'assistant' && sources && sources.length) {
-      for (const s of sources) {
-        // Ensure the contentChunk belongs to the same lesson
-        const chunk = await tx.contentChunk.findUnique({ where: { id: s.contentChunkId } });
-        if (!chunk) throw new Error('Referenced content chunk not found: ' + s.contentChunkId);
-        if (chunk.lessonId !== conv.lessonId) throw new Error('Content chunk lesson mismatch');
+      if (role === 'assistant' && sources && sources.length) {
+        for (const s of sources) {
+          // Ensure the contentChunk belongs to the same lesson
+          const chunk = await tx.contentChunk.findUnique({ where: { id: s.contentChunkId } });
+          if (!chunk) throw new Error('Referenced content chunk not found: ' + s.contentChunkId);
+          if (chunk.lessonId !== conv.lessonId) throw new Error('Content chunk lesson mismatch');
 
-        await tx.messageSource.create({
-          data: {
-            messageId: message.id,
-            contentChunkId: s.contentChunkId,
-            sourceType: s.sourceType || 'unknown',
-            sourceReference: s.sourceReference ?? null,
-            excerpt: s.excerpt ?? null,
-          },
-        });
+          await tx.messageSource.create({
+            data: {
+              messageId: message.id,
+              contentChunkId: s.contentChunkId,
+              sourceType: s.sourceType || 'unknown',
+              sourceReference: s.sourceReference ?? null,
+              excerpt: s.excerpt ?? null,
+            },
+          });
+        }
       }
-    }
 
-    return message;
-  });
+      return message;
+    });
 
   return result;
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
 }
 
 export async function getConversationMessages(conversationId: string) {
   if (!conversationId) throw new Error('conversationId is required');
   // Verify conversation exists
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  let conv;
+  try {
+    conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
   if (!conv) throw new Error('Conversation not found');
 
-  const messages = await prisma.message.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: 'asc' },
-    include: { sources: { include: { contentChunk: true } } },
+  // Only select the minimal contentChunk fields needed and ensure lesson isolation
+  let messages;
+  try {
+    messages = await prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+      include: { sources: { include: { contentChunk: { select: { id: true, lessonId: true, chunkIndex: true, metadata: true, sourceReference: true } } } } },
+    });
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
+
+  // Enforce lesson scoping: strip any sources that do not belong to the conversation's lesson (defense-in-depth)
+  const sanitized = messages.map((m: any) => {
+    const safeSources = (m.sources || []).filter((s: any) => s.contentChunk && s.contentChunk.lessonId === conv.lessonId).map((s: any) => ({
+      id: s.id,
+      page: s.contentChunk?.metadata?.page ?? s.contentChunk?.chunkIndex ?? null,
+      sourceReference: s.sourceReference,
+      excerpt: s.excerpt,
+    }));
+
+    return {
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      createdAt: m.createdAt,
+      sources: safeSources,
+    };
   });
 
-  return messages;
+  return sanitized;
 }
 
 export async function answerConversationMessage({ conversationId, question }: { conversationId: string; question: string; }) {
@@ -100,17 +183,29 @@ export async function answerConversationMessage({ conversationId, question }: { 
   if (!question || !question.toString().trim()) throw new Error('question is empty');
 
   // Load conversation and lesson
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  let conv;
+  try {
+    conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
   if (!conv) throw new Error('Conversation not found');
   const lessonId = conv.lessonId;
 
   // Load bounded history (most recent messages) BEFORE saving the current user message.
   // This ensures the history passed to the answer generator does NOT include the current question.
-  const recentMessages = await prisma.message.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: 'desc' },
-    take: MAX_HISTORY_MESSAGES,
-  });
+  let recentMessages;
+  try {
+    recentMessages = await prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'desc' },
+      take: MAX_HISTORY_MESSAGES,
+    });
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
+  }
 
   // Convert to history format for generateAnswer (reverse to chronological)
   const history: ConversationMessage[] = recentMessages.reverse().map((m: any) => ({
@@ -122,8 +217,9 @@ export async function answerConversationMessage({ conversationId, question }: { 
   let userMessage;
   try {
     userMessage = await prisma.message.create({ data: { conversationId, role: 'user', content: question } });
-  } catch (err) {
-    throw new Error('Failed to persist user message');
+  } catch (err: any) {
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
   }
 
   // Development logging: show which user message will be used for follow-up composition (most recent prior user)
@@ -148,6 +244,8 @@ export async function answerConversationMessage({ conversationId, question }: { 
     } catch (e) {
       // ignored
     }
+    // Propagate safe error or generic
+    if (isAppError(err)) throw err;
     throw new Error('Failed to generate answer');
   }
 
@@ -192,7 +290,8 @@ export async function answerConversationMessage({ conversationId, question }: { 
     return { answer: answerResult.answer, assistantMessageId: assistant.id, sources: answerResult.sources };
   } catch (err: any) {
     // On DB failure, attempt to rollback assistant creation; we cannot rollback external API call
-    throw new Error('Failed to persist assistant message or sources');
+    if (isAppError(err)) throw err;
+    throw new Error('Database error');
   }
 }
 
