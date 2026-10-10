@@ -8,7 +8,7 @@ export default function ConversationHistory({ conversationId, lessonId }: { conv
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('[chat-debug] ConversationHistory mount/prop change conversationId=', conversationId, 'lessonId=', lessonId);
+    
     if (!conversationId) return;
     let mounted = true;
     async function load() {
@@ -16,14 +16,14 @@ export default function ConversationHistory({ conversationId, lessonId }: { conv
       setError(null);
       try {
         const res = await fetch(`/api/conversations/${conversationId}/messages?lessonId=${encodeURIComponent(lessonId)}`);
-        console.log('[chat-debug] ConversationHistory fetch status', res.status);
+        
         if (!res.ok) throw new Error('Failed to load messages');
         const data = await res.json();
-        console.log('[chat-debug] ConversationHistory fetched messages count=', data?.messages?.length ?? null);
+        
         if (!mounted) return;
         setMessages(data.messages || []);
       } catch (err: any) {
-        console.error('[chat-debug] ConversationHistory load error', err?.message || err);
+        console.error('ConversationHistory load error', err?.message || err);
         setError('Unable to load conversation history.');
       } finally {
         setLoading(false);

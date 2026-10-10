@@ -134,43 +134,12 @@ export async function generateAnswer({
     retrievalQuery = question;
   }
 
-  // Conditional debug logging for the second browser request (non-production only)
-  try {
-    if (process.env.NODE_ENV !== 'production' && question && question.toString().trim().toLowerCase() === 'why is that important?') {
-      const threshold = process.env.VECTOR_DISTANCE_THRESHOLD ?? '0.3';
-      console.log('[chat-debug]', JSON.stringify({
-        currentQuestion: question,
-        history: history ?? null,
-        historyRoles: history ? history.map((h) => h.role) : null,
-        previousUserQuestion,
-        isFollowUp,
-        retrievalQuery,
-        lessonId,
-        threshold,
-      }));
-    }
-  } catch (e) {
-    // ignore logging errors
-  }
-
   // Retrieve relevant chunks scoped to lesson using the composed retrievalQuery
   let chunks: RetrievedChunk[] = [];
   try {
     chunks = await retrieveRelevantChunks({ lessonId, query: retrievalQuery, limit });
   } catch (err: any) {
     throw new AnswerError('Retrieval error: ' + String(err?.message || err));
-  }
-
-  // Post-retrieval debug logging for the second browser request
-  try {
-    if (process.env.NODE_ENV !== 'production' && question && question.toString().trim().toLowerCase() === 'why is that important?') {
-      const retrievedCount = chunks ? chunks.length : 0;
-      const topPages = chunks ? chunks.map((c) => (c.metadata?.page ?? c.chunkIndex)) : [];
-      const topDistances = chunks ? chunks.map((c) => c.distance) : [];
-      console.log('[chat-debug]', JSON.stringify({ retrievedCount, topPages, topDistances }));
-    }
-  } catch (e) {
-    // ignore logging errors
   }
 
   if (!chunks || chunks.length === 0) {
@@ -195,24 +164,6 @@ export async function generateAnswer({
     temperature: 0.0,
     max_tokens: 800,
   } as any;
-
-  // Development logging: show the prompts and retrieved chunk excerpts immediately before the OpenRouter call
-  try {
-    if (process.env.NODE_ENV !== 'production' && question && question.toString().trim().toLowerCase() === 'why is that important?') {
-      const systemPrompt = messages && messages.length ? messages[0]?.content ?? null : null;
-      const userMessages = messages ? messages.filter((m: any) => m.role === 'user' || m.role === 'system' || m.role === 'assistant').map((m: any) => ({ role: m.role, content: (m.content || '').toString().slice(0, 2000) })) : null;
-      const retrieved = chunks.map((c) => ({ page: c.metadata?.page ?? c.chunkIndex, excerpt: ((c.content || '').toString().replace(/\s+/g, ' ').slice(0, 800)) }));
-      console.log('[chat-debug]', JSON.stringify({
-        stage: 'pre-openrouter',
-        systemPrompt,
-        userMessages,
-        retrieved,
-        model: OPENROUTER_MODEL,
-      }));
-    }
-  } catch (e) {
-    // ignore logging errors
-  }
 
   let res: Response;
   try {
@@ -246,15 +197,6 @@ export async function generateAnswer({
   try {
     data = await res.json();
 
-    // Development logging: log raw model response content immediately after OpenRouter returns
-    try {
-      if (process.env.NODE_ENV !== 'production' && question && question.toString().trim().toLowerCase() === 'why is that important?') {
-        const rawContent = data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? null;
-        console.log('[chat-debug]', JSON.stringify({ stage: 'post-openrouter', rawContent, rawResponse: data }));
-      }
-    } catch (e) {
-      // ignore logging errors
-    }
   } catch (err: any) {
     throw new AnswerError('Invalid JSON from OpenRouter: ' + String(err?.message || err));
   }

@@ -18,15 +18,15 @@ export async function GET(req: Request, { params }: { params: { conversationId: 
     // If lessonId provided, ensure conversation belongs to that lesson
     if (lessonId) {
       const conv = await getConversation(conversationId);
-      console.log('[chat-debug] GET messages validation conversationId=', conversationId, 'lessonIdParam=', lessonId, 'convLessonId=', conv?.lessonId ?? null);
+      
       if (!conv || conv.lessonId !== lessonId) {
-        console.log('[chat-debug] GET messages validation failed');
+        
         return NextResponse.json({ message: 'Conversation not found' }, { status: 404 });
       }
     }
 
     const messages = await getConversationMessages(conversationId);
-    console.log('[chat-debug] GET messages returning count=', messages?.length ?? null);
+    
     // getConversationMessages now returns a sanitized shape: id, role, content, createdAt, sources
     return NextResponse.json({ messages });
   } catch (err: any) {
